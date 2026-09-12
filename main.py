@@ -177,6 +177,43 @@ def build_strategic_weights(game_state: typing.Dict) -> typing.Dict[typing.Tuple
     return weights
 
 
+def compute_territory_map(game_state, blocked=None, our_start=None):
+    """Repeated BFS Voronoi; equal arrivals remain contested, even if longer."""
+    board, you = game_state["board"], game_state["you"]
+    blocked = set(get_occupied_cells(game_state) if blocked is None else blocked)
+    width, height = board["width"], board["height"]
+    starts = [(snake["id"], to_pos(snake["body"][0])) for snake in board["snakes"]]
+    maps = []
+    for identity, head in starts:
+        origin = our_start if identity == you["id"] and our_start is not None else head
+        offset = 1 if identity == you["id"] and our_start is not None else 0
+        distances = bfs_distances(origin, blocked - {origin}, width, height)
+        maps.append((identity, distances, offset))
+    ours, enemies, contested = set(), set(), set()
+    ownership = {}
+    for x in range(width):
+        for y in range(height):
+            cell = (x, y)
+            if cell in blocked:
+                continue
+            arrivals = [(distances[cell] + offset, identity) for identity, distances, offset in maps if cell in distances]
+            if not arrivals:
+                continue
+            first = min(distance for distance, _ in arrivals)
+            winners = [identity for distance, identity in arrivals if distance == first]
+            owner = winners[0] if len(winners) == 1 else None
+            ownership[cell] = owner
+            if owner is None:
+                contested.add(cell)
+            elif owner == you["id"]:
+                ours.add(cell)
+            else:
+                enemies.add(cell)
+    free_cells = max(1, width * height - len({p for p in blocked if in_bounds(p,width,height)}))
+    return {"ownership": ownership, "our_territory": ours, "enemy_territory": enemies,
+            "contested_cells": contested, "territory_ratio": len(ours) / free_cells}
+
+
 def get_strategy_profile(game_state):
     alive = len(game_state["board"]["snakes"])
     # Bounded rewards retain the same survival hierarchy at every player count.
@@ -301,6 +338,9 @@ def score_move_components(game_state, move, blocked=None, strategic_weights=None
     if danger.get(destination, 0) >= len(game_state["you"]["body"]):
         components["head"] = -HEAD_DANGER_PENALTY
     components["food"] = (strategic_weights.get(destination, 0.0) - components["head"]) * profile["food_weight"]
+    if components["trap"] == 0 and components["head"] == 0 and profile["territory_weight"]:
+        territory = compute_territory_map(game_state, blocked, destination)
+        components["territory"] = territory["territory_ratio"] * profile["territory_weight"]
     distance = nearest_reachable_food_distance(distances, get_food_positions(game_state))
     health = game_state["you"].get("health", 100)
     if health <= 20 and (distance is None or distance + 1 > health):
