@@ -150,36 +150,127 @@ def build_strategic_weights(game_state: typing.Dict) -> typing.Dict[typing.Tuple
             weights[pos] -= HEAD_DANGER_PENALTY
         else:
             weights[pos] += SHORTER_ENEMY_HEAD_BONUS
+    for pos, value in build_food_attraction(game_state, danger=danger_map).items():
+        weights[pos] += value
     return weights
 
 
-def evaluate_move(
-    game_state: typing.Dict,
-    move: str,
-    blocked: typing.Optional[typing.Set[typing.Tuple[int, int]]] = None,
-    strategic_weights: typing.Optional[typing.Dict[typing.Tuple[int, int], float]] = None,
-) -> float:
-    my_head = to_pos(game_state["you"]["body"][0])
-    new_head = next_position(my_head, move)
-    width = game_state["board"]["width"]
-    height = game_state["board"]["height"]
-    snake_length = len(game_state["you"]["body"])
+def get_food_positions(game_state):
+    return {to_pos(cell) for cell in game_state["board"].get("food", [])}
+
+
+def bfs_distances(start, blocked, width, height):
+    """Static hard-occupancy distances; a blocked source is unreachable."""
+    if start in blocked or not in_bounds(start, width, height):
+        return {}
+    distances = {start: 0}
+    queue = deque([start])
+    while queue:
+        x, y = queue.popleft()
+        for dx, dy in DIRECTIONS.values():
+            cell = x + dx, y + dy
+            if in_bounds(cell, width, height) and cell not in blocked and cell not in distances:
+                distances[cell] = distances[(x, y)] + 1
+                queue.append(cell)
+    return distances
+
+
+def nearest_reachable_food_distance(distances, food):
+    return min((distances[pos] for pos in food if pos in distances), default=None)
+
+
+def get_dynamic_food_weight(health):
+    if health > 70:
+        return 4.0
+    if health > 40:
+        return 30.0
+    if health > 20:
+        return 90.0
+    return 240.0
+
+
+def build_food_attraction(game_state, blocked=None, danger=None):
+    """BFS food field, excluding dangerous paths and discounting enemy races.
+
+    Max rather than sum keeps many foods from overwhelming survival penalties.
+    The current head stays blocked: paths cannot reverse through our new neck.
+    """
+    board, you = game_state["board"], game_state["you"]
+    width, height = board["width"], board["height"]
     blocked = set(get_occupied_cells(game_state) if blocked is None else blocked)
+    danger = build_head_danger_map(game_state) if danger is None else danger
+    length = len(you["body"])
+    unsafe = {pos for pos, size in danger.items() if size >= length}
+    enemies = []
+    for enemy in board["snakes"]:
+        if enemy["id"] != you["id"] and len(enemy["body"]) >= length:
+            head = to_pos(enemy["body"][0])
+            enemies.append(bfs_distances(head, blocked - {head}, width, height))
+    attraction = {}
+    urgency = get_dynamic_food_weight(you.get("health", 100))
+    for food in sorted(get_food_positions(game_state)):
+        distances = bfs_distances(food, blocked | unsafe, width, height)
+        if len(distances) < length + 1:
+            continue
+        # An isolated pocket or cul-de-sac is poor food even when close.
+        quality = min(1.0, len(distances) / (SPACE_RATIO_THRESHOLD * (length + 1)))
+        if count_safe_exits(food, blocked, width, height) < 2:
+            quality *= 0.1
+        enemy_distance = min((d.get(food, float("inf")) for d in enemies), default=float("inf"))
+        for cell, distance in distances.items():
+            steps = distance + 1
+            if steps > you.get("health", 100):
+                continue
+            contest = 0.1 if enemy_distance <= steps else 1.0
+            value = urgency * quality * contest / steps
+            attraction[cell] = max(attraction.get(cell, 0.0), value)
+    return attraction
+
+
+def food_score_for_move(game_state, move, attraction=None):
+    if attraction is None:
+        attraction = build_food_attraction(game_state)
+    return attraction.get(next_position(to_pos(game_state["you"]["body"][0]), move), 0.0)
+
+
+def score_move_components(game_state, move, blocked=None, strategic_weights=None):
+    head = to_pos(game_state["you"]["body"][0])
+    destination = next_position(head, move)
+    board = game_state["board"]
+    width, height = board["width"], board["height"]
+    occupied = get_occupied_cells(game_state)
+    components = dict.fromkeys(("safety", "space", "exits", "trap", "head", "food",
+                                "starvation", "territory", "hazard", "aggression", "search"), 0.0)
+    if not in_bounds(destination, width, height) or destination in occupied:
+        components["safety"] = -float("inf")
+        return components
+    blocked = set(occupied if blocked is None else blocked)
+    blocked.discard(destination)
+    blocked.add(head)
+    distances = bfs_distances(destination, blocked, width, height)
+    reachable = len(distances)
+    length = len(game_state["you"]["body"]) + (destination in get_food_positions(game_state))
+    components["space"] = min(reachable, 400) * SPACE_WEIGHT
+    components["exits"] = count_safe_exits(destination, blocked, width, height) * EXIT_WEIGHT
+    if reachable < length:
+        components["trap"] = -TRAP_PENALTY
+    elif reachable / max(1, length) < SPACE_RATIO_THRESHOLD:
+        components["trap"] = -TRAP_PENALTY * 0.5
     if strategic_weights is None:
         strategic_weights = build_strategic_weights(game_state)
+    danger = build_head_danger_map(game_state)
+    if danger.get(destination, 0) >= len(game_state["you"]["body"]):
+        components["head"] = -HEAD_DANGER_PENALTY
+    components["food"] = strategic_weights.get(destination, 0.0) - components["head"]
+    distance = nearest_reachable_food_distance(distances, get_food_positions(game_state))
+    health = game_state["you"].get("health", 100)
+    if health <= 20 and (distance is None or distance + 1 > health):
+        components["starvation"] = -1500.0
+    return components
 
-    reachable = flood_fill_space(new_head, blocked, width, height)
-    exits = count_safe_exits(new_head, blocked, width, height)
 
-    score = reachable * SPACE_WEIGHT + exits * EXIT_WEIGHT
-
-    if reachable < snake_length:
-        score -= TRAP_PENALTY
-    elif reachable / max(1, snake_length) < SPACE_RATIO_THRESHOLD:
-        score -= TRAP_PENALTY * 0.5
-
-    score += strategic_weights.get(new_head, 0.0)
-    return score
+def evaluate_move(game_state, move, blocked=None, strategic_weights=None):
+    return sum(score_move_components(game_state, move, blocked, strategic_weights).values())
 
 
 # info is called when you create your Battlesnake on play.battlesnake.com
