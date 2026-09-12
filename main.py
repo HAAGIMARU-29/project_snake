@@ -10,10 +10,12 @@
 # To get you started we've included code to prevent your Battlesnake from moving backwards.
 # For more info see docs.battlesnake.com
 
+import json
+import os
 import typing
 from time import perf_counter
 from snake.search import choose_move, SEARCH_BUDGET_SECONDS, HARD_CUTOFF_SECONDS
-from collections import deque
+from collections import Counter, deque
 from heapq import heappop, heappush
 
 
@@ -27,7 +29,7 @@ DIRECTIONS = {
 MOVE_PRIORITY = ["up", "right", "down", "left"]
 
 SPACE_WEIGHT = 1.0
-EXIT_WEIGHT = 5.0
+EXIT_WEIGHT = 3.0
 TRAP_PENALTY = 1000.0
 SPACE_RATIO_THRESHOLD = 1.5
 
@@ -153,19 +155,26 @@ def get_enemy_possible_head_positions(game_state: typing.Dict, enemy_snake: typi
 def build_head_danger_map(game_state: typing.Dict) -> typing.Dict[typing.Tuple[int, int], int]:
     danger_map = {}
     our_id = game_state.get("you", {}).get("id", "me")
+    counts = Counter(to_pos(cell) for snake in game_state["board"]["snakes"] for cell in snake["body"])
+    releasable = {to_pos(snake["body"][-1]) for snake in game_state["board"]["snakes"]
+                  if len(snake["body"]) > 2 and counts[to_pos(snake["body"][-1])] == 1}
 
     for snake in game_state.get("board", {}).get("snakes", []):
         if snake.get("id") == our_id:
             continue
         enemy_length = len(snake.get("body", []))
         possible_positions = get_enemy_possible_head_positions(game_state, snake)
+        # Threat prediction is deliberately more pessimistic than our legal filter.
+        head = to_pos(snake["body"][0])
+        possible_positions |= {next_position(head,direction) for direction in MOVE_PRIORITY
+                               if next_position(head,direction) in releasable}
         for pos in possible_positions:
             if pos not in danger_map or enemy_length > danger_map[pos]:
                 danger_map[pos] = enemy_length
     return danger_map
 
 
-def build_strategic_weights(game_state: typing.Dict) -> typing.Dict[typing.Tuple[int, int], float]:
+def build_strategic_weights(game_state: typing.Dict, deadline=None) -> typing.Dict[typing.Tuple[int, int], float]:
     width = game_state["board"]["width"]
     height = game_state["board"]["height"]
     our_length = len(game_state["you"]["body"])
@@ -178,7 +187,7 @@ def build_strategic_weights(game_state: typing.Dict) -> typing.Dict[typing.Tuple
             weights[pos] -= HEAD_DANGER_PENALTY
         else:
             weights[pos] += SHORTER_ENEMY_HEAD_BONUS
-    for pos, value in build_food_attraction(game_state, danger=danger_map).items():
+    for pos, value in build_food_attraction(game_state, danger=danger_map, deadline=deadline).items():
         weights[pos] += value
     hazards, food = hazard_cells(game_state), get_food_positions(game_state)
     for pos in hazards:
@@ -387,7 +396,7 @@ def get_dynamic_food_weight(health):
     return 240.0
 
 
-def build_food_attraction(game_state, blocked=None, danger=None):
+def build_food_attraction(game_state, blocked=None, danger=None, deadline=None):
     """BFS food field, excluding dangerous paths and discounting enemy races.
 
     Max rather than sum keeps many foods from overwhelming survival penalties.
@@ -414,6 +423,8 @@ def build_food_attraction(game_state, blocked=None, danger=None):
     targets = sorted((food for food in get_food_positions(game_state) if food in from_head),
                      key=lambda food: (from_head[food], food))[:FOOD_TARGET_LIMIT]
     for food in targets:
+        if deadline is not None and perf_counter() >= deadline:
+            break
         distances = bfs_distances(food, blocked | unsafe, width, height)
         if len(distances) < length + 1:
             continue
@@ -481,11 +492,14 @@ def score_move_components(game_state, move, blocked=None, strategic_weights=None
     if components["trap"] == 0 and components["head"] == 0:
         components["aggression"] = aggression_score(game_state,destination,blocked,reachable,profile)
     components["hazard"] = royale_score(game_state, destination, blocked, distances) * profile["hazard_weight"]
-    distance = nearest_reachable_food_distance(distances, get_food_positions(game_state))
     health = game_state["you"].get("health", 100)
+    food = get_food_positions(game_state)
+    food_distances = health_cost_distances(game_state,destination,blocked) if is_royale(game_state) and health <= 20 else distances
+    distance = nearest_reachable_food_distance(food_distances,food)
+    entry_cost = 1 + (hazard_damage(game_state) if destination in hazard_cells(game_state) and destination not in food else 0)
     if health_after_step(game_state, destination) <= 0:
         components["starvation"] = -HEAD_DANGER_PENALTY
-    elif health <= 20 and (distance is None or distance + 1 > health):
+    elif health <= 20 and destination not in food and (distance is None or distance + entry_cost > health):
         components["starvation"] = -1500.0
     return components
 
@@ -514,46 +528,72 @@ def start(game_state: typing.Dict):
     print("GAME START")
 
 
-# end is called when your Battlesnake finishes a game
+def death_reason(game_state):
+    """Use explicit elimination evidence when supplied; ordinary /end may lack it."""
+    you = game_state.get("you", {})
+    cause = you.get("elimination_event", {}).get("cause", you.get("eliminatedCause", ""))
+    known = {"wall-collision":"WALL", "snake-collision":"BODY", "snake-self-collision":"BODY",
+             "head-collision":"HEAD_TO_HEAD", "out-of-health":"STARVATION", "hazard":"HAZARD",
+             "timeout":"TIMEOUT", "trapped":"TRAPPED"}
+    if cause in known:
+        return known[cause]
+    body = you.get("body", [])
+    if body:
+        head = to_pos(body[0])
+        board = game_state["board"]
+        if not in_bounds(head,board["width"],board["height"]):
+            return "WALL"
+        if you.get("health",100) <= 0:
+            return "HAZARD" if head in hazard_cells(game_state) else "STARVATION"
+    return "UNKNOWN"
+
+
 def end(game_state: typing.Dict):
-    print("GAME OVER\n")
+    alive = any(snake["id"] == game_state["you"]["id"] for snake in game_state["board"]["snakes"])
+    print(json.dumps({"event":"end", "turn":game_state.get("turn"),
+                      "game_id":game_state.get("game",{}).get("id"), "snake_id":game_state["you"]["id"],
+                      "outcome":"survived" if alive else "eliminated",
+                      "death_reason":None if alive else death_reason(game_state)},separators=(",",":")))
 
 
-# move is called on every turn and returns your next move
-# Valid moves are "up", "down", "left", or "right"
-# See https://docs.battlesnake.com/api/example-move for available data
-def move(game_state: typing.Dict, search_enabled=True) -> typing.Dict:
+def log_decision(game_state, chosen, started, components, timed_out=False, fallback=False):
+    if os.environ.get("BATTLESNAKE_LOG", "1") == "0":
+        return
+    print(json.dumps({"event":"move", "turn":game_state.get("turn"),
+                      "game_id":game_state.get("game",{}).get("id"), "snake_id":game_state["you"]["id"],
+                      "decision_time_ms":round((perf_counter()-started)*1000,2),
+                      "chosen_move":chosen, "scores":{key:round(value,2) for key,value in components.items()},
+                      "snakes_alive":len(game_state["board"]["snakes"]),
+                      "health":game_state["you"].get("health",100),
+                      "ruleset":game_state.get("game",{}).get("ruleset",{}).get("name","standard"),
+                      "search_timeout":timed_out,"fallback":fallback},separators=(",",":")))
+
+
+def move(game_state: typing.Dict, search_enabled=None) -> typing.Dict:
     started = perf_counter()
+    if search_enabled is None:
+        search_enabled = os.environ.get("BATTLESNAKE_SEARCH", "1") != "0"
+    timeout = game_state.get("game",{}).get("timeout",500) / 1000
+    deadline = started + min(HARD_CUTOFF_SECONDS, max(0.001,timeout * 0.6))
     safe_moves = get_safe_moves(game_state, tail_aware=True)
-
     if not safe_moves:
-        chosen_move = "down"
-        print(f"MOVE {game_state.get('turn', '?')}: safe=[] chosen={chosen_move} (fallback)")
-        return {"move": chosen_move}
+        log_decision(game_state,"down",started,{},fallback=True)
+        return {"move":"down"}
 
-    my_head = to_pos(game_state["you"]["body"][0])
-    occupied = get_occupied_cells(game_state)
-    blocked = set(occupied)
-    blocked.discard(my_head)
-
-    strategic_weights = build_strategic_weights(game_state)
-
-    scored_moves = []
-    for move in safe_moves:
-        new_head = next_position(my_head, move)
-        blocked_for_move = set(blocked)
-        blocked_for_move.discard(new_head)
-        score = evaluate_move(game_state, move, blocked_for_move, strategic_weights)
-        scored_moves.append((move, score))
-
-    scored_moves.sort(key=lambda x: (-x[1], MOVE_PRIORITY.index(x[0])))
-    chosen_move = scored_moves[0][0]
-    deadline = min(started + HARD_CUTOFF_SECONDS, perf_counter() + SEARCH_BUDGET_SECONDS)
-    chosen_move, search_scores, timed_out = choose_move(game_state, dict(scored_moves), chosen_move, deadline, enabled=search_enabled)
-
-    score_str = " ".join(f"{m}={s:.1f}" for m, s in scored_moves)
-    print(f"MOVE {game_state.get('turn', '?')}: {score_str} | chosen={chosen_move}")
-    return {"move": chosen_move}
+    blocked = get_occupied_cells(game_state)
+    strategic_weights = build_strategic_weights(game_state,deadline=deadline)
+    components = {}
+    for direction in safe_moves:
+        if components and perf_counter() >= deadline:
+            break
+        components[direction] = score_move_components(game_state,direction,blocked,strategic_weights)
+    scores = {direction:sum(parts.values()) for direction,parts in components.items()}
+    chosen = max(scores,key=lambda direction:(scores[direction],-MOVE_PRIORITY.index(direction)))
+    search_deadline = min(deadline,perf_counter()+SEARCH_BUDGET_SECONDS)
+    chosen, search_scores, timed_out = choose_move(game_state,scores,chosen,search_deadline,enabled=search_enabled)
+    components[chosen]["search"] = search_scores.get(chosen,0.0)
+    log_decision(game_state,chosen,started,components[chosen],timed_out)
+    return {"move":chosen}
 
 
 # Start server when `python main.py` is run
