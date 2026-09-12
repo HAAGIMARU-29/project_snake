@@ -6,6 +6,7 @@ from time import perf_counter
 SEARCH_BUDGET_SECONDS = 0.22
 HARD_CUTOFF_SECONDS = 0.27
 SEARCH_DEATH_PENALTY = 20000.0
+RELEVANT_ENEMY_DISTANCE = 4
 
 
 def simulate_turn(state, moves):
@@ -77,7 +78,9 @@ def response_penalty(state, our_id):
         if danger.get(position,0) >= length or bot.health_after_step(state,position) <= 0:
             continue
         blocked = bot.get_effective_blocked_cells(state,direction) - {position}
-        space = bot.flood_fill_space(position,blocked,state['board']['width'],state['board']['height'])
+        space = bot.flood_fill_space(position,blocked,state['board']['width'],state['board']['height'],limit=length)
+        if space >= length:
+            return 0.0
         best_space = max(best_space,space)
     if best_space == 0:
         return -SEARCH_DEATH_PENALTY
@@ -96,7 +99,15 @@ def choose_move(state, scores, fallback, deadline=None, enabled=True, clock=perf
         return fallback, {}, True
     our_id = state['you']['id']
     enemies = [snake for snake in state['board']['snakes'] if snake['id'] != our_id]
-    options = [plausible_responses(state,enemy) for enemy in enemies]
+    head = bot.to_pos(state['you']['body'][0])
+    options = []
+    for enemy in enemies:
+        enemy_head = bot.to_pos(enemy['body'][0])
+        choices = plausible_responses(state,enemy)
+        # Two simultaneous turns can close at most four grid steps. Far enemies
+        # cannot reach our tactical neighborhood within this search horizon.
+        distance = abs(head[0]-enemy_head[0])+abs(head[1]-enemy_head[1])
+        options.append(choices if distance <= RELEVANT_ENEMY_DISTANCE else choices[:1])
     penalties = {}
     for direction in scores:
         worst = 0.0

@@ -34,6 +34,7 @@ SPACE_RATIO_THRESHOLD = 1.5
 BASE_CELL_WEIGHT = 0.0
 HEAD_DANGER_PENALTY = 10000.0
 SHORTER_ENEMY_HEAD_BONUS = 0.0
+FOOD_TARGET_LIMIT = 12
 
 
 def to_pos(cell: typing.Dict) -> typing.Tuple[int, int]:
@@ -94,7 +95,7 @@ def get_effective_blocked_cells(game_state, candidate_move=None):
     return occupied
 
 
-def flood_fill_space(start: typing.Tuple[int, int], blocked: typing.Set[typing.Tuple[int, int]], width: int, height: int) -> int:
+def flood_fill_space(start: typing.Tuple[int, int], blocked: typing.Set[typing.Tuple[int, int]], width: int, height: int, limit=None) -> int:
     if start in blocked or not in_bounds(start, width, height):
         return 0
 
@@ -105,6 +106,8 @@ def flood_fill_space(start: typing.Tuple[int, int], blocked: typing.Set[typing.T
     while queue:
         current = queue.popleft()
         count += 1
+        if limit is not None and count >= limit:
+            return count
         x, y = current
 
         for dx, dy in DIRECTIONS.values():
@@ -177,9 +180,10 @@ def build_strategic_weights(game_state: typing.Dict) -> typing.Dict[typing.Tuple
             weights[pos] += SHORTER_ENEMY_HEAD_BONUS
     for pos, value in build_food_attraction(game_state, danger=danger_map).items():
         weights[pos] += value
-    for pos in hazard_cells(game_state):
+    hazards, food = hazard_cells(game_state), get_food_positions(game_state)
+    for pos in hazards:
         if pos in weights:
-            weights[pos] += hazard_cost(game_state, pos)
+            weights[pos] += hazard_cost(game_state, pos, hazards, food)
     return weights
 
 
@@ -236,13 +240,15 @@ def health_after_step(game_state, position, health=None):
     return health - 1 - (hazard_damage(game_state) if position in hazard_cells(game_state) else 0)
 
 
-def hazard_cost(game_state, position):
-    if position not in hazard_cells(game_state):
+def hazard_cost(game_state, position, hazards=None, food=None):
+    hazards = hazard_cells(game_state) if hazards is None else hazards
+    food = get_food_positions(game_state) if food is None else food
+    if position not in hazards:
         return 0.0
-    remaining = health_after_step(game_state,position)
+    remaining = 100 if position in food else game_state["you"].get("health",100) - 1 - hazard_damage(game_state)
     if remaining <= 0:
         return -HEAD_DANGER_PENALTY
-    if position in get_food_positions(game_state):
+    if position in food:
         return 0.0
     return -min(400.0, hazard_damage(game_state) * (1.0 + 50.0 / remaining))
 
@@ -400,7 +406,14 @@ def build_food_attraction(game_state, blocked=None, danger=None):
             enemies.append(bfs_distances(head, blocked - {head}, width, height))
     attraction = {}
     urgency = get_dynamic_food_weight(you.get("health", 100))
-    for food in sorted(get_food_positions(game_state)):
+    hazards = hazard_cells(game_state)
+    damage = hazard_damage(game_state)
+    head = to_pos(you["body"][0])
+    from_head = bfs_distances(head, (blocked | unsafe) - {head}, width, height)
+    # Bound pathological food-dense boards. Rank by reachable distance, not geometry.
+    targets = sorted((food for food in get_food_positions(game_state) if food in from_head),
+                     key=lambda food: (from_head[food], food))[:FOOD_TARGET_LIMIT]
+    for food in targets:
         distances = bfs_distances(food, blocked | unsafe, width, height)
         if len(distances) < length + 1:
             continue
@@ -412,7 +425,7 @@ def build_food_attraction(game_state, blocked=None, danger=None):
         energy = health_cost_distances(game_state, food, blocked | unsafe, reverse=True) if is_royale(game_state) else distances
         for cell, distance in distances.items():
             steps = distance + 1
-            entry_cost = 1 + (hazard_damage(game_state) if cell in hazard_cells(game_state) and cell != food else 0)
+            entry_cost = 1 + (damage if cell in hazards and cell != food else 0)
             if energy.get(cell, float("inf")) + entry_cost > you.get("health", 100):
                 continue
             if steps > you.get("health", 100):
@@ -460,7 +473,8 @@ def score_move_components(game_state, move, blocked=None, strategic_weights=None
     danger = build_head_danger_map(game_state)
     if danger.get(destination, 0) >= len(game_state["you"]["body"]):
         components["head"] = -HEAD_DANGER_PENALTY
-    components["food"] = (strategic_weights.get(destination, 0.0) - components["head"] - hazard_cost(game_state, destination)) * profile["food_weight"]
+    attraction = strategic_weights.get(destination, 0.0) - components["head"] - hazard_cost(game_state, destination)
+    components["food"] = max(0.0, min(get_dynamic_food_weight(game_state["you"].get("health",100)), attraction)) * profile["food_weight"]
     if components["trap"] == 0 and components["head"] == 0 and profile["territory_weight"]:
         territory = compute_territory_map(game_state, blocked, destination)
         components["territory"] = territory["territory_ratio"] * profile["territory_weight"]
