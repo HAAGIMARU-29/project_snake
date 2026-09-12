@@ -1,5 +1,22 @@
 # Battlesnake Python Starter Project
 
+This repository contains the SEDS Hackathon tournament bot built on the official starter. It supports Standard multiplayer and Royale with health-aware food routing, conservative tails, territory control, and deadline-limited tactical search.
+
+## Project documentation
+
+Start with the **[documentation index](docs/README.md)** for the complete project guides:
+
+- [Setup, local games, and Docker](docs/getting-started.md)
+- [Architecture](docs/architecture.md) and [HTTP API / game state](docs/api-and-state.md)
+- [Strategy and scoring](docs/strategy-and-scoring.md), [search](docs/search.md), and [Python function reference](docs/function-reference.md)
+- [Testing and performance](docs/testing-and-performance.md)
+- [Tournament operations and troubleshooting](docs/operations.md)
+- [Development, tuning, and implementation history](docs/development.md)
+
+Recorded validation and phase reports are in [reports/TOURNAMENT_REPORT.md](reports/TOURNAMENT_REPORT.md) and [reports/PHASE_REPORT.md](reports/PHASE_REPORT.md).
+
+## Original starter guide
+
 An official Battlesnake template written in Python. Get started at [play.battlesnake.com](https://play.battlesnake.com).
 
 ![Battlesnake Logo](https://media.battlesnake.com/social/StarterSnakeGitHubRepos_Python.png)
@@ -29,8 +46,8 @@ python main.py
 You should see the following output once it is running
 
 ```sh
-Running your Battlesnake at http://0.0.0.0:8000
- * Serving Flask app 'My Battlesnake'
+Running Battlesnake at http://0.0.0.0:8000
+ * Serving Flask app 'Battlesnake'
  * Debug mode: off
 ```
 
