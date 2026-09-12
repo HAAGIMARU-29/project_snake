@@ -181,6 +181,40 @@ def build_strategic_weights(game_state: typing.Dict) -> typing.Dict[typing.Tuple
     return weights
 
 
+def aggression_score(game_state, destination, blocked, reachable, profile=None):
+    """Small bonuses for verified pressure on shorter enemies only."""
+    you, board = game_state["you"], game_state["board"]
+    length = len(you["body"])
+    if (you.get("health",100) <= 40 or reachable < SPACE_RATIO_THRESHOLD * (length + 1)
+            or build_head_danger_map(game_state).get(destination,0) >= length
+            or hazard_cost(game_state,destination) < 0):
+        return 0.0
+    profile = get_strategy_profile(game_state) if profile is None else profile
+    width,height = board["width"],board["height"]
+    best = 0.0
+    for enemy in board["snakes"]:
+        if enemy["id"] == you["id"] or len(enemy["body"]) >= length:
+            continue
+        head = to_pos(enemy["body"][0])
+        before_blocked = set(blocked) - {head,destination}
+        before = bfs_distances(head,before_blocked,width,height)
+        after_blocked = before_blocked | {destination}
+        after = bfs_distances(head,after_blocked,width,height)
+        reduction = max(0,len(before)-len(after)-1) / max(1,width*height)
+        exits_before = count_safe_exits(head,before_blocked,width,height)
+        exits_after = count_safe_exits(head,after_blocked,width,height)
+        denial = max(0,exits_before-exits_after)
+        pressure = 60.0 * reduction + 8.0 * denial
+        if destination in get_enemy_possible_head_positions(game_state,enemy):
+            pressure += 12.0
+            if exits_after <= 1:
+                pressure += 8.0  # genuine restricted escape, often at an edge
+        if destination in get_food_positions(game_state) and before.get(destination,99) <= 2:
+            pressure += 12.0
+        best = max(best,pressure)
+    return min(80.0,best) * profile["aggression_weight"]
+
+
 def is_royale(game_state):
     return game_state.get("game", {}).get("ruleset", {}).get("name") == "royale"
 
@@ -428,6 +462,8 @@ def score_move_components(game_state, move, blocked=None, strategic_weights=None
     if components["trap"] == 0 and components["head"] == 0 and profile["territory_weight"]:
         territory = compute_territory_map(game_state, blocked, destination)
         components["territory"] = territory["territory_ratio"] * profile["territory_weight"]
+    if components["trap"] == 0 and components["head"] == 0:
+        components["aggression"] = aggression_score(game_state,destination,blocked,reachable,profile)
     components["hazard"] = royale_score(game_state, destination, blocked, distances) * profile["hazard_weight"]
     distance = nearest_reachable_food_distance(distances, get_food_positions(game_state))
     health = game_state["you"].get("health", 100)
