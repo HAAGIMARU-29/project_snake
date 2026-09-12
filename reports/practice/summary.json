@@ -1,0 +1,104 @@
+{
+  "opponent": "25b0cd6",
+  "matches": [
+    {
+      "mode": "standard",
+      "size": 11,
+      "seed": 101,
+      "seconds": 1.25,
+      "result": {
+        "winnerId": "e69c4d4b-a3d8-42f6-98b0-47fd6abecff1",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "standard",
+      "size": 11,
+      "seed": 202,
+      "seconds": 2.26,
+      "result": {
+        "winnerId": "941c7b0b-b863-4ede-b8d1-5c4fd060972c",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "standard",
+      "size": 11,
+      "seed": 303,
+      "seconds": 1.64,
+      "result": {
+        "winnerId": "a52779f2-56b9-4016-9370-c1afc57ca160",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 11,
+      "seed": 101,
+      "seconds": 1.55,
+      "result": {
+        "winnerId": "18af136d-4480-4502-a37a-e4572cae6bfb",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 11,
+      "seed": 202,
+      "seconds": 1.58,
+      "result": {
+        "winnerId": "e48ac9b7-2c74-4661-98b5-6ec0cf59bcf3",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 11,
+      "seed": 303,
+      "seconds": 2.05,
+      "result": {
+        "winnerId": "386018f4-4fab-48f3-9205-f6c422dd4423",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 19,
+      "seed": 101,
+      "seconds": 3.78,
+      "result": {
+        "winnerId": "3e92e629-76ec-4184-a0a6-b90cdcd41dfc",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 19,
+      "seed": 202,
+      "seconds": 3.49,
+      "result": {
+        "winnerId": "57e8e48b-290d-4913-ab20-84b307383467",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 19,
+      "seed": 303,
+      "seconds": 6.62,
+      "result": {
+        "winnerId": "4c52339b-6e74-447d-ba24-b6d77e007c7b",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    }
+  ]
+}

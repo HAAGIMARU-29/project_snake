@@ -1,0 +1,77 @@
+[
+  {
+    "batch": "practice",
+    "matches": 9,
+    "designated_bot_wins": 9,
+    "decisions": 1341,
+    "mean_ms": 15.94,
+    "p95_ms": 41.67,
+    "max_ms": 69.44,
+    "search_deadline_fallbacks": 0,
+    "engine_death_causes": {}
+  },
+  {
+    "batch": "selfplay",
+    "matches": 9,
+    "designated_bot_wins": 2,
+    "decisions": 7446,
+    "mean_ms": 25.25,
+    "p95_ms": 69.84,
+    "max_ms": 160.15,
+    "search_deadline_fallbacks": 0,
+    "engine_death_causes": {}
+  },
+  {
+    "batch": "hardening",
+    "matches": 6,
+    "designated_bot_wins": 2,
+    "decisions": 4815,
+    "mean_ms": 28.71,
+    "p95_ms": 76.87,
+    "max_ms": 140.45,
+    "search_deadline_fallbacks": 0,
+    "engine_death_causes": {
+      "head-collision": 2,
+      "snake-self-collision": 3,
+      "snake-collision": 2,
+      "wall-collision": 1,
+      "hazard": 6,
+      "out-of-health": 4
+    }
+  },
+  {
+    "batch": "final-baseline",
+    "matches": 9,
+    "designated_bot_wins": 9,
+    "decisions": 1150,
+    "mean_ms": 17.14,
+    "p95_ms": 37.46,
+    "max_ms": 48.91,
+    "search_deadline_fallbacks": 0,
+    "engine_death_causes": {
+      "head-collision": 15,
+      "out-of-health": 10,
+      "snake-self-collision": 1,
+      "hazard": 1
+    }
+  },
+  {
+    "batch": "final-selfplay",
+    "matches": 6,
+    "designated_bot_wins": 3,
+    "decisions": 5005,
+    "mean_ms": 28.81,
+    "p95_ms": 79.45,
+    "max_ms": 204.73,
+    "search_deadline_fallbacks": 0,
+    "http_errors": 0,
+    "engine_death_causes": {
+      "head-collision": 2,
+      "snake-self-collision": 2,
+      "wall-collision": 1,
+      "snake-collision": 2,
+      "hazard": 8,
+      "out-of-health": 3
+    }
+  }
+]

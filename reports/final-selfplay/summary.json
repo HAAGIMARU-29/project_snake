@@ -1,0 +1,155 @@
+{
+  "opponent": "self",
+  "matches": [
+    {
+      "deaths": {
+        "Opponent3": {
+          "cause": "head-collision",
+          "turn": 144
+        },
+        "TournamentBot": {
+          "cause": "head-collision",
+          "turn": 151
+        },
+        "Opponent2": {
+          "cause": "snake-self-collision",
+          "turn": 217
+        }
+      },
+      "mode": "standard",
+      "size": 11,
+      "seed": 707,
+      "seconds": 5.27,
+      "result": {
+        "winnerId": "abb77df7-2925-40af-8bc5-26149bd559f3",
+        "winnerName": "Opponent1",
+        "isDraw": false
+      }
+    },
+    {
+      "deaths": {
+        "Opponent1": {
+          "cause": "wall-collision",
+          "turn": 197
+        },
+        "Opponent2": {
+          "cause": "snake-collision",
+          "turn": 209
+        },
+        "Opponent3": {
+          "cause": "snake-self-collision",
+          "turn": 213
+        }
+      },
+      "mode": "standard",
+      "size": 11,
+      "seed": 808,
+      "seconds": 5.64,
+      "result": {
+        "winnerId": "ced1b9ed-e3ec-495d-917a-d96f6a8fcdf2",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "deaths": {
+        "TournamentBot": {
+          "cause": "hazard",
+          "turn": 134
+        },
+        "Opponent2": {
+          "cause": "snake-collision",
+          "turn": 140
+        },
+        "Opponent1": {
+          "cause": "hazard",
+          "turn": 175
+        }
+      },
+      "mode": "royale",
+      "size": 11,
+      "seed": 707,
+      "seconds": 5.97,
+      "result": {
+        "winnerId": "b95718f4-05f0-48ca-87d3-05426fd275ad",
+        "winnerName": "Opponent3",
+        "isDraw": false
+      }
+    },
+    {
+      "deaths": {
+        "Opponent1": {
+          "cause": "hazard",
+          "turn": 123
+        },
+        "Opponent3": {
+          "cause": "hazard",
+          "turn": 167
+        },
+        "Opponent2": {
+          "cause": "out-of-health",
+          "turn": 207
+        }
+      },
+      "mode": "royale",
+      "size": 11,
+      "seed": 808,
+      "seconds": 5.89,
+      "result": {
+        "winnerId": "37b3fa07-8153-457d-be75-f250c51adf3c",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "deaths": {
+        "TournamentBot": {
+          "cause": "out-of-health",
+          "turn": 166
+        },
+        "Opponent3": {
+          "cause": "hazard",
+          "turn": 363
+        },
+        "Opponent1": {
+          "cause": "hazard",
+          "turn": 399
+        }
+      },
+      "mode": "royale",
+      "size": 19,
+      "seed": 707,
+      "seconds": 43.53,
+      "result": {
+        "winnerId": "659ba105-0730-4e19-8f88-212d2c42ef7f",
+        "winnerName": "Opponent2",
+        "isDraw": false
+      }
+    },
+    {
+      "deaths": {
+        "Opponent3": {
+          "cause": "hazard",
+          "turn": 179
+        },
+        "Opponent1": {
+          "cause": "out-of-health",
+          "turn": 190
+        },
+        "Opponent2": {
+          "cause": "hazard",
+          "turn": 429
+        }
+      },
+      "mode": "royale",
+      "size": 19,
+      "seed": 808,
+      "seconds": 26.84,
+      "result": {
+        "winnerId": "8c372943-7f6f-4e13-8d0b-731bd4e7af35",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    }
+  ]
+}

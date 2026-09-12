@@ -1,0 +1,104 @@
+{
+  "opponent": "self",
+  "matches": [
+    {
+      "mode": "standard",
+      "size": 11,
+      "seed": 404,
+      "seconds": 7.26,
+      "result": {
+        "winnerId": "58a1b0b0-aa04-4ffb-bdbb-04e0d1c66ca2",
+        "winnerName": "Opponent2",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "standard",
+      "size": 11,
+      "seed": 505,
+      "seconds": 7.23,
+      "result": {
+        "winnerId": "1225442d-b5b4-4e5b-bc49-1d6d4846ee5e",
+        "winnerName": "Opponent3",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "standard",
+      "size": 11,
+      "seed": 606,
+      "seconds": 4.37,
+      "result": {
+        "winnerId": "b490a61e-dde5-4cac-ade9-4475c44473ac",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 11,
+      "seed": 404,
+      "seconds": 4.93,
+      "result": {
+        "winnerId": "16145507-b258-4b5b-a37c-94f26160a43e",
+        "winnerName": "Opponent1",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 11,
+      "seed": 505,
+      "seconds": 3.68,
+      "result": {
+        "winnerId": "c748d226-6c3a-4e27-b281-1a4327e36b0c",
+        "winnerName": "Opponent2",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 11,
+      "seed": 606,
+      "seconds": 6.28,
+      "result": {
+        "winnerId": "770603e9-4bf5-43e9-a80f-0ebd2e008741",
+        "winnerName": "Opponent3",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 19,
+      "seed": 404,
+      "seconds": 23.48,
+      "result": {
+        "winnerId": "bc074254-9ff8-4ae3-880a-a4881d2591ef",
+        "winnerName": "Opponent2",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 19,
+      "seed": 505,
+      "seconds": 39.76,
+      "result": {
+        "winnerId": "16ad9f9d-f718-46b6-b387-ee6d78fa6023",
+        "winnerName": "TournamentBot",
+        "isDraw": false
+      }
+    },
+    {
+      "mode": "royale",
+      "size": 19,
+      "seed": 606,
+      "seconds": 25.31,
+      "result": {
+        "winnerId": "11274417-8d87-4abe-97d6-91d6aa5ab9fe",
+        "winnerName": "Opponent3",
+        "isDraw": false
+      }
+    }
+  ]
+}

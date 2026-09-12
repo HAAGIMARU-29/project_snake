@@ -1,0 +1,19 @@
+........................................................................ [ 35%]
+........................................................................ [ 70%]
+.............................................................            [100%]
+=============================== warnings summary ===============================
+tests/test_hardening.py::test_flask_routes_remain_compatible
+  /home/sammo/Desktop/SEDS_Hackathon_2026/starter-snake-python/.venv/lib/python3.13/site-packages/flask/helpers.py:578: DeprecationWarning: 'pkgutil.get_loader' is deprecated and slated for removal in Python 3.14; use importlib.util.find_spec() instead
+    loader = pkgutil.get_loader(import_name)
+
+tests/test_hardening.py::test_flask_routes_remain_compatible
+tests/test_hardening.py::test_flask_routes_remain_compatible
+  /usr/lib/python3.13/pkgutil.py:291: DeprecationWarning: 'pkgutil.find_loader' is deprecated and slated for removal in Python 3.14; use importlib.util.find_spec() instead
+    return find_loader(fullname)
+
+tests/test_hardening.py::test_flask_routes_remain_compatible
+  /home/sammo/Desktop/SEDS_Hackathon_2026/starter-snake-python/.venv/lib/python3.13/site-packages/flask/scaffold.py:859: DeprecationWarning: 'pkgutil.get_loader' is deprecated and slated for removal in Python 3.14; use importlib.util.find_spec() instead
+    loader = pkgutil.get_loader(root_mod_name)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+205 passed, 4 warnings in 2.21s
