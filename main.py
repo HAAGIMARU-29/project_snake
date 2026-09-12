@@ -11,6 +11,8 @@
 # For more info see docs.battlesnake.com
 
 import typing
+from time import perf_counter
+from snake.search import choose_move, SEARCH_BUDGET_SECONDS, HARD_CUTOFF_SECONDS
 from collections import deque
 from heapq import heappop, heappush
 
@@ -506,7 +508,8 @@ def end(game_state: typing.Dict):
 # move is called on every turn and returns your next move
 # Valid moves are "up", "down", "left", or "right"
 # See https://docs.battlesnake.com/api/example-move for available data
-def move(game_state: typing.Dict) -> typing.Dict:
+def move(game_state: typing.Dict, search_enabled=True) -> typing.Dict:
+    started = perf_counter()
     safe_moves = get_safe_moves(game_state, tail_aware=True)
 
     if not safe_moves:
@@ -531,6 +534,8 @@ def move(game_state: typing.Dict) -> typing.Dict:
 
     scored_moves.sort(key=lambda x: (-x[1], MOVE_PRIORITY.index(x[0])))
     chosen_move = scored_moves[0][0]
+    deadline = min(started + HARD_CUTOFF_SECONDS, perf_counter() + SEARCH_BUDGET_SECONDS)
+    chosen_move, search_scores, timed_out = choose_move(game_state, dict(scored_moves), chosen_move, deadline, enabled=search_enabled)
 
     score_str = " ".join(f"{m}={s:.1f}" for m, s in scored_moves)
     print(f"MOVE {game_state.get('turn', '?')}: {score_str} | chosen={chosen_move}")
