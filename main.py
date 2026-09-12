@@ -156,14 +156,17 @@ def build_strategic_weights(game_state: typing.Dict) -> typing.Dict[typing.Tuple
 def evaluate_move(
     game_state: typing.Dict,
     move: str,
-    blocked: typing.Set[typing.Tuple[int, int]],
-    strategic_weights: typing.Dict[typing.Tuple[int, int], float]
+    blocked: typing.Optional[typing.Set[typing.Tuple[int, int]]] = None,
+    strategic_weights: typing.Optional[typing.Dict[typing.Tuple[int, int], float]] = None,
 ) -> float:
     my_head = to_pos(game_state["you"]["body"][0])
     new_head = next_position(my_head, move)
     width = game_state["board"]["width"]
     height = game_state["board"]["height"]
     snake_length = len(game_state["you"]["body"])
+    blocked = set(get_occupied_cells(game_state) if blocked is None else blocked)
+    if strategic_weights is None:
+        strategic_weights = build_strategic_weights(game_state)
 
     reachable = flood_fill_space(new_head, blocked, width, height)
     exits = count_safe_exits(new_head, blocked, width, height)
