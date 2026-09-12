@@ -177,6 +177,20 @@ def build_strategic_weights(game_state: typing.Dict) -> typing.Dict[typing.Tuple
     return weights
 
 
+def get_strategy_profile(game_state):
+    alive = len(game_state["board"]["snakes"])
+    # Bounded rewards retain the same survival hierarchy at every player count.
+    pressure = 0.15 if alive >= 4 else 0.45 if alive == 3 else 1.0 if alive == 2 else 0.0
+    return {
+        "space_weight": 1.2 if alive >= 4 else 1.1 if alive == 3 else 1.0,
+        "food_weight": 0.8 if alive >= 4 else 0.9 if alive == 3 else 1.0,
+        "aggression_weight": pressure,
+        "territory_weight": 15.0 if alive >= 4 else 30.0 if alive == 3 else 60.0 if alive == 2 else 0.0,
+        "head_pressure_weight": 12.0 * pressure,
+        "hazard_weight": 1.0,
+    }
+
+
 def get_food_positions(game_state):
     return {to_pos(cell) for cell in game_state["board"].get("food", [])}
 
@@ -274,7 +288,8 @@ def score_move_components(game_state, move, blocked=None, strategic_weights=None
     distances = bfs_distances(destination, blocked, width, height)
     reachable = len(distances)
     length = len(game_state["you"]["body"]) + (destination in get_food_positions(game_state))
-    components["space"] = min(reachable, 400) * SPACE_WEIGHT
+    profile = get_strategy_profile(game_state)
+    components["space"] = min(reachable, 400) * SPACE_WEIGHT * profile["space_weight"]
     components["exits"] = count_safe_exits(destination, blocked, width, height) * EXIT_WEIGHT
     if reachable < length:
         components["trap"] = -TRAP_PENALTY
@@ -285,7 +300,7 @@ def score_move_components(game_state, move, blocked=None, strategic_weights=None
     danger = build_head_danger_map(game_state)
     if danger.get(destination, 0) >= len(game_state["you"]["body"]):
         components["head"] = -HEAD_DANGER_PENALTY
-    components["food"] = strategic_weights.get(destination, 0.0) - components["head"]
+    components["food"] = (strategic_weights.get(destination, 0.0) - components["head"]) * profile["food_weight"]
     distance = nearest_reachable_food_distance(distances, get_food_positions(game_state))
     health = game_state["you"].get("health", 100)
     if health <= 20 and (distance is None or distance + 1 > health):
