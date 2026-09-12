@@ -55,7 +55,7 @@ def get_occupied_cells(game_state: typing.Dict) -> typing.Set[typing.Tuple[int, 
     return occupied
 
 
-def get_safe_moves(game_state: typing.Dict) -> typing.List[str]:
+def get_safe_moves(game_state: typing.Dict, tail_aware: bool = False) -> typing.List[str]:
     my_head = to_pos(game_state["you"]["body"][0])
     width = game_state["board"]["width"]
     height = game_state["board"]["height"]
@@ -64,9 +64,31 @@ def get_safe_moves(game_state: typing.Dict) -> typing.List[str]:
     safe = []
     for move in MOVE_PRIORITY:
         next_pos = next_position(my_head, move)
-        if in_bounds(next_pos, width, height) and next_pos not in occupied:
+        effective = get_effective_blocked_cells(game_state, move) if tail_aware else occupied
+        if in_bounds(next_pos, width, height) and next_pos not in effective:
             safe.append(move)
     return safe
+
+
+def get_effective_blocked_cells(game_state, candidate_move=None):
+    """Release only a unique own tail, on a known non-eating candidate.
+
+    Enemy tails stay occupied: their food choice and growth are uncertain.
+    Duplicate tails (growth / initial stacking) never open a false passage.
+    """
+    occupied = get_occupied_cells(game_state)
+    body = game_state["you"]["body"]
+    if candidate_move is None or len(body) < 3:
+        return occupied
+    destination = next_position(to_pos(body[0]), candidate_move)
+    if destination in get_food_positions(game_state):
+        return occupied
+    tail = to_pos(body[-1])
+    occurrences = sum(to_pos(cell) == tail for snake in game_state["board"]["snakes"]
+                      for cell in snake["body"])
+    if occurrences == 1:
+        occupied.discard(tail)
+    return occupied
 
 
 def flood_fill_space(start: typing.Tuple[int, int], blocked: typing.Set[typing.Tuple[int, int]], width: int, height: int) -> int:
@@ -238,13 +260,15 @@ def score_move_components(game_state, move, blocked=None, strategic_weights=None
     destination = next_position(head, move)
     board = game_state["board"]
     width, height = board["width"], board["height"]
-    occupied = get_occupied_cells(game_state)
+    occupied = get_effective_blocked_cells(game_state, move)
     components = dict.fromkeys(("safety", "space", "exits", "trap", "head", "food",
                                 "starvation", "territory", "hazard", "aggression", "search"), 0.0)
     if not in_bounds(destination, width, height) or destination in occupied:
         components["safety"] = -float("inf")
         return components
     blocked = set(occupied if blocked is None else blocked)
+    # Respect custom obstacles, but apply candidate tail release to raw occupancy.
+    blocked -= get_occupied_cells(game_state) - occupied
     blocked.discard(destination)
     blocked.add(head)
     distances = bfs_distances(destination, blocked, width, height)
@@ -302,7 +326,7 @@ def end(game_state: typing.Dict):
 # Valid moves are "up", "down", "left", or "right"
 # See https://docs.battlesnake.com/api/example-move for available data
 def move(game_state: typing.Dict) -> typing.Dict:
-    safe_moves = get_safe_moves(game_state)
+    safe_moves = get_safe_moves(game_state, tail_aware=True)
 
     if not safe_moves:
         chosen_move = "down"
