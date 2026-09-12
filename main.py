@@ -12,6 +12,7 @@
 
 import typing
 from collections import deque
+from heapq import heappop, heappush
 
 
 DIRECTIONS = {
@@ -174,7 +175,89 @@ def build_strategic_weights(game_state: typing.Dict) -> typing.Dict[typing.Tuple
             weights[pos] += SHORTER_ENEMY_HEAD_BONUS
     for pos, value in build_food_attraction(game_state, danger=danger_map).items():
         weights[pos] += value
+    for pos in hazard_cells(game_state):
+        if pos in weights:
+            weights[pos] += hazard_cost(game_state, pos)
     return weights
+
+
+def is_royale(game_state):
+    return game_state.get("game", {}).get("ruleset", {}).get("name") == "royale"
+
+
+def hazard_cells(game_state):
+    return {to_pos(cell) for cell in game_state["board"].get("hazards", [])} if is_royale(game_state) else set()
+
+
+def hazard_damage(game_state):
+    return max(0, game_state.get("game", {}).get("ruleset", {}).get("settings", {}).get("hazardDamagePerTurn", 14))
+
+
+def health_after_step(game_state, position, health=None):
+    health = game_state["you"].get("health",100) if health is None else health
+    if position in get_food_positions(game_state):
+        return 100
+    return health - 1 - (hazard_damage(game_state) if position in hazard_cells(game_state) else 0)
+
+
+def hazard_cost(game_state, position):
+    if position not in hazard_cells(game_state):
+        return 0.0
+    remaining = health_after_step(game_state,position)
+    if remaining <= 0:
+        return -HEAD_DANGER_PENALTY
+    if position in get_food_positions(game_state):
+        return 0.0
+    return -min(400.0, hazard_damage(game_state) * (1.0 + 50.0 / remaining))
+
+
+def health_cost_distances(game_state, start, blocked, reverse=False):
+    """Dijkstra energy to the first food/safe region; no speculative food respawn.
+
+    Reverse mode prices the destination edge, for food attraction fields.
+    Food resets health when actually entered, handled by health_after_step.
+    """
+    board = game_state["board"]
+    width, height = board["width"], board["height"]
+    if start in blocked or not in_bounds(start,width,height):
+        return {}
+    hazards, food = hazard_cells(game_state), get_food_positions(game_state)
+    damage = hazard_damage(game_state)
+    costs = {start:0}
+    queue = [(0,start)]
+    while queue:
+        cost, cell = heappop(queue)
+        if cost != costs[cell]:
+            continue
+        for dx,dy in DIRECTIONS.values():
+            neighbor = cell[0]+dx,cell[1]+dy
+            if not in_bounds(neighbor,width,height) or neighbor in blocked:
+                continue
+            charged = cell if reverse else neighbor
+            extra = 1 + (damage if charged in hazards and charged not in food else 0)
+            updated = cost + extra
+            if updated < costs.get(neighbor,float("inf")):
+                costs[neighbor] = updated
+                heappush(queue,(updated,neighbor))
+    return costs
+
+
+def royale_score(game_state, position, blocked, distances):
+    if not is_royale(game_state):
+        return 0.0
+    immediate = hazard_cost(game_state,position)
+    if immediate <= -HEAD_DANGER_PENALTY:
+        return immediate
+    remaining = health_after_step(game_state,position)
+    hazards = hazard_cells(game_state)
+    costs = health_cost_distances(game_state,position,blocked)
+    safe = {cell for cell,cost in costs.items() if cell not in hazards and cost < remaining}
+    accessible_food = any(cell in costs and costs[cell] <= remaining for cell in get_food_positions(game_state))
+    access_bonus = 25.0 * len(safe) / max(1,game_state["board"]["width"] * game_state["board"]["height"])
+    if not safe and not accessible_food:
+        return immediate - 1500.0
+    # Reward reachable safe space, with no geometric-center preference.
+    return immediate + access_bonus
 
 
 def compute_territory_map(game_state, blocked=None, our_start=None):
@@ -290,8 +373,12 @@ def build_food_attraction(game_state, blocked=None, danger=None):
         if count_safe_exits(food, blocked, width, height) < 2:
             quality *= 0.1
         enemy_distance = min((d.get(food, float("inf")) for d in enemies), default=float("inf"))
+        energy = health_cost_distances(game_state, food, blocked | unsafe, reverse=True) if is_royale(game_state) else distances
         for cell, distance in distances.items():
             steps = distance + 1
+            entry_cost = 1 + (hazard_damage(game_state) if cell in hazard_cells(game_state) and cell != food else 0)
+            if energy.get(cell, float("inf")) + entry_cost > you.get("health", 100):
+                continue
             if steps > you.get("health", 100):
                 continue
             contest = 0.1 if enemy_distance <= steps else 1.0
@@ -337,13 +424,16 @@ def score_move_components(game_state, move, blocked=None, strategic_weights=None
     danger = build_head_danger_map(game_state)
     if danger.get(destination, 0) >= len(game_state["you"]["body"]):
         components["head"] = -HEAD_DANGER_PENALTY
-    components["food"] = (strategic_weights.get(destination, 0.0) - components["head"]) * profile["food_weight"]
+    components["food"] = (strategic_weights.get(destination, 0.0) - components["head"] - hazard_cost(game_state, destination)) * profile["food_weight"]
     if components["trap"] == 0 and components["head"] == 0 and profile["territory_weight"]:
         territory = compute_territory_map(game_state, blocked, destination)
         components["territory"] = territory["territory_ratio"] * profile["territory_weight"]
+    components["hazard"] = royale_score(game_state, destination, blocked, distances) * profile["hazard_weight"]
     distance = nearest_reachable_food_distance(distances, get_food_positions(game_state))
     health = game_state["you"].get("health", 100)
-    if health <= 20 and (distance is None or distance + 1 > health):
+    if health_after_step(game_state, destination) <= 0:
+        components["starvation"] = -HEAD_DANGER_PENALTY
+    elif health <= 20 and (distance is None or distance + 1 > health):
         components["starvation"] = -1500.0
     return components
 
