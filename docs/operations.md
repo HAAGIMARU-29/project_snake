@@ -26,11 +26,28 @@ Use a distinct output directory for a new batch:
   --seeds 404 505 606 --output reports/selfplay-session-1
 ```
 
+For the hackathon format, every match runs four snakes: `TournamentBot` plus
+`Opponent1` through `Opponent3`. Use `--matches` to run an exact multi-round
+batch. The tournament schedule cycles Standard 11×11, Royale 11×11, and Royale
+19×19 while recording each match's finishing position:
+
+```bash
+.venv/bin/python scripts/practice.py --self-play --matches 50 \
+  --seeds 101 202 303 --output reports/tournament-50
+.venv/bin/python scripts/tournament_report.py \
+  reports/tournament-50/summary.json
+```
+
+The report command writes `tournament-results.json`, a Markdown standings table,
+and a dependency-free `tournament-results.svg` chart. Points are awarded 4/3/2/1
+for first through fourth place, so repeated rounds produce a cumulative table.
+
 | Argument | Default | Meaning |
 |---|---|---|
 | `--output PATH` | `reports/practice` | Artifact directory, resolved from the command's current directory |
 | `--seeds N [N ...]` | `101 202 303` | Integer CLI seeds |
 | `--self-play` | Off | Use the current bot as opponent instead of the preserved baseline |
+| `--matches N` | Off | Run exactly N four-snake matches using the rotating tournament schedule |
 
 For every seed, the runner plays four-snake Standard 11×11, Royale 11×11, and Royale 19×19. Three seeds produce nine games. The designated bot uses port 8100; three opponents share port 8101. The CLI gets a 500 ms request timeout and each match subprocess has a 120-second overall limit.
 

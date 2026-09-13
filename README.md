@@ -54,7 +54,7 @@ Running Battlesnake at http://0.0.0.0:8000
 Open [localhost:8000](http://localhost:8000) in your browser and you should see
 
 ```json
-{"apiversion":"1","author":"","color":"#888888","head":"default","tail":"default"}
+{"apiversion":"1","author":"SEDS Hackathon","color":"#2563EB","head":"sunglasses","tail":"bolt"}
 ```
 
 ## Play a Game Locally

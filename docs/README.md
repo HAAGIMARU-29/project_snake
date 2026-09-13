@@ -9,6 +9,7 @@ These guides describe the checked-in implementation. Historical measurements are
 | Guide | What it covers |
 |---|---|
 | [Getting started](getting-started.md) | Environment, installation, local server, CLI games, Docker, and configuration |
+| [Deployment](deployment.md) | Container launch, public URL requirements, hackathon checklist, and failure checks |
 | [Architecture](architecture.md) | Repository layout, request lifecycle, representations, dependencies, and invariants |
 | [HTTP API and game state](api-and-state.md) | Routes, request fields, coordinate conventions, example payload, and input assumptions |
 | [Strategy and scoring](strategy-and-scoring.md) | Every score component, constants, food, tails, Standard profiles, territory, and Royale |

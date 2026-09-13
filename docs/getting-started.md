@@ -57,7 +57,7 @@ curl http://localhost:8000/
 The response describes the snake's current appearance:
 
 ```json
-{"apiversion":"1","author":"","color":"#888888","head":"default","tail":"default"}
+{"apiversion":"1","author":"SEDS Hackathon","color":"#2563EB","head":"sunglasses","tail":"bolt"}
 ```
 
 Stop the foreground server with Ctrl+C. Restart it after code changes; the entry point does not enable Flask's development reloader.
@@ -129,4 +129,4 @@ The build uses `COPY . /usr/app`, and the repository currently has no `.dockerig
 
 ## Access from a tournament engine
 
-A local URL is reachable only from an engine with access to that host. For a hosted tournament, provide the reachable endpoint required by the tournament setup. Keep `PORT` aligned with the hosting environment, verify all four [HTTP routes](api-and-state.md), and measure latency from the engine's location. Local compute benchmarks do not include network travel or hosting startup delays.
+A local URL is reachable only from an engine with access to that host. For a hosted tournament, follow the [deployment checklist](deployment.md) and provide its public HTTPS endpoint. Keep `PORT` aligned with the hosting environment, verify all four [HTTP routes](api-and-state.md), and measure latency from the engine's location. Local compute benchmarks do not include network travel or hosting startup delays.

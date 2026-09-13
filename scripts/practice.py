@@ -20,11 +20,27 @@ ROOT=Path(__file__).resolve().parents[1]
 BASELINE='25b0cd6'
 
 
+def placement_for_match(deaths, result, players=('TournamentBot', 'Opponent1', 'Opponent2', 'Opponent3')):
+    """Return final rank for every player in a four-snake match."""
+    winner = result.get('winnerName')
+    ordered = [winner] if winner in players else []
+    eliminated = sorted(
+        (name for name in players if name != winner and name in deaths),
+        key=lambda name: (deaths[name].get('turn', -1), name),
+        reverse=True,
+    )
+    ordered.extend(eliminated)
+    ordered.extend(name for name in players if name not in ordered)
+    return {name: index + 1 for index, name in enumerate(ordered)}
+
+
 def run():
     parser=argparse.ArgumentParser()
     parser.add_argument('--output',default='reports/practice')
     parser.add_argument('--seeds',type=int,nargs='+',default=[101,202,303])
     parser.add_argument('--self-play',action='store_true')
+    parser.add_argument('--matches',type=int,default=None,
+                        help='Run exactly this many four-snake matches using the tournament schedule')
     args=parser.parse_args()
     output=Path(args.output).resolve()
     output.mkdir(parents=True,exist_ok=True)
@@ -56,9 +72,26 @@ def run():
                         time.sleep(.05)
                 else:
                     raise RuntimeError('server startup deadline exceeded')
-            for mode,size in [('standard',11),('royale',11),('royale',19)]:
-                for seed in args.seeds:
-                    label=f'{mode}-{size}-{seed}'
+            if args.matches is not None:
+                if args.matches <= 0:
+                    raise ValueError('--matches must be positive')
+                formats = [('standard', 11), ('royale', 11), ('royale', 19)]
+                match_specs = []
+                for index in range(args.matches):
+                    mode, size = formats[index % len(formats)]
+                    seed = args.seeds[index % len(args.seeds)] + 1000 * (index // len(args.seeds))
+                    match_specs.append((mode, size, seed, index + 1))
+            else:
+                match_specs = [
+                    (mode, size, seed, index + 1)
+                    for index, (mode, size, seed) in enumerate(
+                        ( (mode, size, seed)
+                          for mode, size in [('standard',11),('royale',11),('royale',19)]
+                          for seed in args.seeds )
+                    )
+                ]
+            for mode, size, seed, match_number in match_specs:
+                    label=f'{match_number:03d}-{mode}-{size}-{seed}' if args.matches is not None else f'{mode}-{size}-{seed}'
                     replay=output/f'{label}.jsonl'
                     command=['battlesnake','play','-W',str(size),'-H',str(size),'-g',mode,'--seed',str(seed),'--timeout','500','-v','--output',str(replay),'--name','TournamentBot','--url','http://localhost:8100']
                     for i in range(3):
@@ -72,7 +105,12 @@ def run():
                     deaths={}
                     for name,cause,turn in re.findall(r'(TournamentBot|Opponent[123]) [^:]+: Health: -?\d+, Eliminated: ([\w-]+), Turn: (\d+)',completed.stdout):
                         deaths[name]={'cause':cause,'turn':int(turn)}
-                    record={'deaths':deaths,'mode':mode,'size':size,'seed':seed,'seconds':round(time.perf_counter()-started,2),'result':frames[-1]}
+                    result = frames[-1]
+                    record={'match':match_number,'round':match_number,
+                            'deaths':deaths,'mode':mode,'size':size,'seed':seed,
+                            'seconds':round(time.perf_counter()-started,2),
+                            'result':result,
+                            'placements':placement_for_match(deaths, result)}
                     records.append(record)
                     print(json.dumps(record),flush=True)
     finally:

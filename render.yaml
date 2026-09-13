@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: seds-battlesnake
+    runtime: docker
+    plan: free
+    autoDeploy: false
+    healthCheckPath: /
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: BATTLESNAKE_SEARCH
+        value: "1"
+      - key: BATTLESNAKE_MAX_DEPTH
+        value: "2"
+      - key: BATTLESNAKE_LOG
+        value: "0"
