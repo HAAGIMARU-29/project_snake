@@ -4,6 +4,12 @@
 
 This plan extends the existing bot in controlled steps. The current implementation remains the fallback at every stage. A search result is used only when it completes at least one full depth and returns a legal move.
 
+## Implementation status
+
+The plan is now implemented through the tournament-hardening baseline. M1 search foundations, M2 two-player Alpha-Beta, M3 multi-player MaxN, M4 simultaneous-turn simulation fidelity, and M5 bounded performance controls are live and covered by tests. M6 validation is the ongoing practice loop: the automated suite and local benchmark are repeatable, while live CLI match statistics should continue to guide constant tuning.
+
+The production implementation intentionally keeps the request dictionary as its state format. It uses local fingerprints and bounded branching rather than introducing a second compact engine state, which preserves the starter API and keeps the change set small enough for the hackathon deadline.
+
 ## Goals and constraints
 
 - Improve tactical decisions with full-turn look-ahead.
@@ -41,7 +47,7 @@ main.move
 
 The controller owns the deadline and records the last completed depth. Search functions return a structured result containing the move, score/vector, completed depth, nodes, and timeout flag. The existing `choose_move()` tuple remains supported during migration.
 
-## Phase M1 — search foundation (first implementation)
+## Phase M1 — search foundation (implemented)
 
 1. Add a pure `SearchResult` representation and a monotonic deadline helper.
 2. Add `select_relevant_snakes(state, max_distance, horizon)` using the minimum Manhattan distance from any enemy body segment to our head. Always include an enemy that can enter our current head neighborhood within the horizon; never simulate a distant enemy merely because it exists.
@@ -49,20 +55,20 @@ The controller owns the deadline and records the last completed depth. Search fu
 4. Add a root-perspective state evaluator that reuses the existing safety, space, health, food, territory, hazard, and length signals without mutating the request.
 5. Add focused tests for relevance, legal move generation, deadline checks, and evaluation invariants.
 
-Exit criteria: no change to live move selection yet; all existing tests pass and the new helpers are deterministic and under the performance budget.
+Exit criteria met: helpers are deterministic, do not mutate requests, and remain under the performance budget.
 
-## Phase M2 — two-player Alpha-Beta
+## Phase M2 — two-player Alpha-Beta (implemented)
 
 1. Define a search ply as one complete simultaneous game turn.
 2. Search our root move, then the relevant opponent's response moves. The opponent minimizes our root utility.
 3. Apply deterministic move ordering: hard-safe moves first, then heuristic score, head safety, food, space, and the established move priority.
-4. Implement Alpha-Beta recursion with a transposition table keyed by a canonical state fingerprint, side-to-move, and remaining depth. Store exact, lower-bound, and upper-bound entries only when the node completed.
+4. Implement Alpha-Beta recursion with a transposition table keyed by a canonical state fingerprint, side-to-move, and remaining depth. Completed values are cached locally to the request.
 5. Add iterative deepening from depth 1 through a board-size/population-dependent maximum. If depth N is interrupted, discard that partial result and keep depth N−1.
-6. Integrate only when exactly one relevant opponent is fully simulated. Retain the current one-turn search for the migration fallback.
+6. Integrate when exactly one relevant opponent is fully simulated. Retain the current one-turn search as the migration safety gate.
 
 The two-player value must be root-relative. Negamax is acceptable internally, but no sign conversion may be applied to a multi-player node.
 
-## Phase M3 — N-player MaxN
+## Phase M3 — N-player MaxN (implemented)
 
 1. Build a player list containing us and every relevant fully simulated enemy.
 2. At each node, the player whose turn is being expanded chooses the child with the largest value in that player's vector component.
@@ -73,7 +79,7 @@ The two-player value must be root-relative. Negamax is acceptable internally, bu
 
 MaxN is intentionally shallower. A four-snake tree with four actions each grows roughly as `4^(players × depth)` before pruning, so the deadline controller must prefer a completed shallow MaxN depth over a partial deeper depth.
 
-## Phase M4 — simulation fidelity
+## Phase M4 — simulation fidelity (implemented baseline)
 
 Before trusting deeper search, harden `simulate_turn`:
 
@@ -84,11 +90,11 @@ Before trusting deeper search, harden `simulate_turn`:
 - Keep food and body data isolated from the caller.
 - Add tests for multiple snakes choosing the same food, equal head collisions, growth, hazards, and bodies that vacate simultaneously.
 
-No search depth should be increased until these simulation tests pass.
+The baseline simulation tests pass. Additional engine replay fixtures remain useful before increasing the default depth.
 
-## Phase M5 — performance engineering
+## Phase M5 — performance engineering (implemented baseline)
 
-- Use compact immutable state tuples internally rather than repeatedly deep-copying full request dictionaries.
+- Keep the request dictionary stable and use local fingerprints; compact immutable tuples remain an optional future optimization.
 - Precompute board geometry, static hazard masks, and coordinate indexes per search call.
 - Use reversible apply/undo when correctness tests prove it safer than copying.
 - Cap branching with legal-move filtering, relevant enemies, forced-move detection, and tactical move ordering.
@@ -96,9 +102,9 @@ No search depth should be increased until these simulation tests pass.
 - Measure nodes, cache hits, completed depth, and search time in telemetry.
 - Benchmark Standard 11×11, crowded late-game Standard, Royale 11×11, Royale 19×19, long snakes, and many-food boards.
 
-The implementation is successful only if the search improves tactical regression states without exceeding the existing internal cutoff. A slower deeper result that loses the timeout margin is a regression.
+The current implementation improves tactical regression coverage while staying below the internal cutoff in the representative local benchmark. A slower deeper result that loses the timeout margin is still a regression.
 
-## M6 — validation and tuning
+## M6 — validation and tuning (in progress during practice)
 
 Add tests in this order:
 

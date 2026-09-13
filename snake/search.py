@@ -8,6 +8,9 @@ SEARCH_BUDGET_SECONDS = 0.22
 HARD_CUTOFF_SECONDS = 0.27
 SEARCH_DEATH_PENALTY = 20000.0
 RELEVANT_ENEMY_DISTANCE = 4
+MAX_ORDERED_ACTIONS = 3
+MAX_MAXN_ACTIONS = 2
+MAX_MAXN_DEPTH = 1
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,7 @@ class SearchResult:
     cache_hits: int = 0
     timed_out: bool = False
     algorithm: str = "fallback"
+    vector: tuple = ()
 
 
 def deadline_expired(deadline, clock=perf_counter):
@@ -132,7 +136,7 @@ def evaluate_search_state(state, root_id=None, player_ids=None):
     head = bot.to_pos(root["body"][0])
     blocked = bot.get_effective_blocked_cells(view)
     blocked.discard(head)
-    space = bot.flood_fill_space(head, blocked, state["board"]["width"], state["board"]["height"], limit=400)
+    space = bot.flood_fill_space(head, blocked, state["board"]["width"], state["board"]["height"], limit=200)
     exits = bot.count_safe_exits(head, blocked, state["board"]["width"], state["board"]["height"])
     health = root.get("health", 100)
     length = len(root["body"])
@@ -259,3 +263,255 @@ def choose_move(state, scores, fallback, deadline=None, enabled=True, clock=perf
         return fallback, {}, True
     choice = max(scores,key=lambda direction: (scores[direction]+penalties[direction],-bot.MOVE_PRIORITY.index(direction)))
     return choice, penalties, False
+
+
+class _SearchTimeout(Exception):
+    """Internal control flow used to discard an incomplete depth."""
+
+
+def _ordered_moves(state, snake_id, root_id=None):
+    """Order legal moves with a cheap tactical score, then stable priority.
+
+    Calling the full strategic evaluator at every tree node defeats the point of
+    move ordering. The complete scorer still evaluates the root candidates.
+    """
+    import main as bot
+
+    moves = generate_search_moves(state, snake_id)
+    if not moves:
+        return ["up"]
+    view = _snake_view(state, snake_id)
+    scored = []
+    head = bot.to_pos(view["you"]["body"][0])
+    food = bot.get_food_positions(view)
+    danger = bot.build_head_danger_map(view)
+    body_length = len(view["you"]["body"])
+    for move in moves:
+        destination = bot.next_position(head, move)
+        score = 0.0
+        if destination in food:
+            score += 100.0
+        if danger.get(destination, 0) >= body_length:
+            score -= 10000.0
+        score += bot.count_safe_exits(
+            destination,
+            bot.get_effective_blocked_cells(view, move),
+            view["board"]["width"],
+            view["board"]["height"],
+        ) * bot.EXIT_WEIGHT
+        scored.append((move, score))
+    ordered = [move for move, _ in sorted(
+        scored,
+        key=lambda item: (-item[1], bot.MOVE_PRIORITY.index(item[0])),
+    )]
+    # Branch bounding is applied only to internal action ordering. The caller's
+    # heuristic fallback remains available when a search result is incomplete.
+    limit = MAX_MAXN_ACTIONS if len(state["board"].get("snakes", [])) > 2 else MAX_ORDERED_ACTIONS
+    return ordered[:limit]
+
+
+def _root_alive(state, root_id):
+    return any(snake.get("id") == root_id and snake.get("body")
+               for snake in state.get("board", {}).get("snakes", []))
+
+
+def _joint_turn(state, root_id, root_move, opponents, opponent_moves):
+    moves = {root_id: root_move}
+    moves.update({snake_id: move for snake_id, move in zip(opponents, opponent_moves)})
+    return simulate_turn(state, moves)
+
+
+def _alpha_beta_node(state, root_id, opponent_id, depth, alpha, beta,
+                     deadline, table, stats, clock):
+    if deadline_expired(deadline, clock):
+        raise _SearchTimeout
+    stats["nodes"] += 1
+    if depth <= 0 or not _root_alive(state, root_id):
+        return evaluate_search_state(state, root_id, [root_id, opponent_id])
+    key = (fingerprint_state(state, root_id), opponent_id, depth)
+    cached = table.get(key)
+    if cached is not None:
+        stats["cache_hits"] += 1
+        return cached
+
+    root_moves = _ordered_moves(state, root_id, root_id)
+    opponent_moves = _ordered_moves(state, opponent_id, root_id)
+    best = -float("inf")
+    for root_move in root_moves:
+        worst = float("inf")
+        for opponent_move in opponent_moves:
+            if deadline_expired(deadline, clock):
+                raise _SearchTimeout
+            future, reasons = _joint_turn(
+                state, root_id, root_move, [opponent_id], [opponent_move]
+            )
+            value = (-SEARCH_DEATH_PENALTY if root_id in reasons else
+                     _alpha_beta_node(future, root_id, opponent_id, depth - 1,
+                                      alpha, beta, deadline, table, stats, clock))
+            worst = min(worst, value)
+            beta = min(beta, worst)
+            if beta <= alpha:
+                break
+        best = max(best, worst)
+        alpha = max(alpha, best)
+        if beta <= alpha:
+            break
+    table[key] = best
+    return best
+
+
+def alpha_beta_root(state, root_id, opponent_id, depth, deadline,
+                    table=None, clock=perf_counter):
+    """Search one complete turn per depth in a two-player Alpha-Beta tree."""
+    table = {} if table is None else table
+    stats = {"nodes": 0, "cache_hits": 0}
+    root_moves = _ordered_moves(state, root_id, root_id)
+    opponent_moves = _ordered_moves(state, opponent_id, root_id)
+    if not root_moves:
+        return SearchResult("down", -SEARCH_DEATH_PENALTY, depth,
+                            stats["nodes"], stats["cache_hits"], False, "alphabeta")
+    best_move = root_moves[0]
+    best = -float("inf")
+    alpha = -float("inf")
+    for root_move in root_moves:
+        if deadline_expired(deadline, clock):
+            raise _SearchTimeout
+        worst = float("inf")
+        for opponent_move in opponent_moves:
+            if deadline_expired(deadline, clock):
+                raise _SearchTimeout
+            future, reasons = _joint_turn(
+                state, root_id, root_move, [opponent_id], [opponent_move]
+            )
+            value = (-SEARCH_DEATH_PENALTY if root_id in reasons else
+                     _alpha_beta_node(future, root_id, opponent_id, depth - 1,
+                                      alpha, float("inf"), deadline, table,
+                                      stats, clock))
+            worst = min(worst, value)
+            if worst <= alpha:
+                break
+        if worst > best:
+            best, best_move = worst, root_move
+        alpha = max(alpha, best)
+    return SearchResult(best_move, best, depth, stats["nodes"],
+                        stats["cache_hits"], False, "alphabeta")
+
+
+def _player_utility(state, player_id, player_ids):
+    value = evaluate_search_state(state, player_id, player_ids)
+    # Keep a cheap root safety gate inside MaxN's utility. The full one-turn
+    # response search is reserved for the existing live safety gate; repeating
+    # it at every MaxN leaf would consume the entire board-time budget.
+    if player_ids and player_id == player_ids[0]:
+        choices = generate_search_moves(state, player_id)
+        if not choices:
+            value -= SEARCH_DEATH_PENALTY
+        else:
+            import main as bot
+            length = len(state["you"]["body"])
+            danger = bot.build_head_danger_map(state)
+            if all(danger.get(bot.next_position(bot.to_pos(state["you"]["body"][0]), move), 0) >= length
+                   for move in choices):
+                value -= SEARCH_DEATH_PENALTY
+    return value
+
+
+def _maxn_node(state, player_ids, depth, actor_index, pending,
+               deadline, table, stats, clock):
+    if deadline_expired(deadline, clock):
+        raise _SearchTimeout
+    stats["nodes"] += 1
+    if depth <= 0:
+        return tuple(_player_utility(state, player_id, player_ids)
+                     for player_id in player_ids)
+    key = (fingerprint_state(state, player_ids[0]), depth, actor_index,
+           tuple(sorted(pending.items())))
+    cached = table.get(key)
+    if cached is not None:
+        stats["cache_hits"] += 1
+        return cached
+
+    actor_id = player_ids[actor_index]
+    moves = _ordered_moves(state, actor_id, player_ids[0])
+    best_vector = None
+    for move in moves:
+        if deadline_expired(deadline, clock):
+            raise _SearchTimeout
+        next_pending = dict(pending)
+        next_pending[actor_id] = move
+        if actor_index + 1 < len(player_ids):
+            vector = _maxn_node(state, player_ids, depth, actor_index + 1,
+                                next_pending, deadline, table, stats, clock)
+        else:
+            all_moves = dict(next_pending)
+            for snake in state["board"].get("snakes", []):
+                snake_id = snake.get("id")
+                if snake_id in all_moves:
+                    continue
+                fallback_moves = _ordered_moves(state, snake_id, player_ids[0])
+                all_moves[snake_id] = fallback_moves[0] if fallback_moves else "up"
+            future, reasons = simulate_turn(state, all_moves)
+            if player_ids[0] in reasons:
+                vector = (-SEARCH_DEATH_PENALTY,) + tuple(
+                    _player_utility(future, player_id, player_ids[1:])
+                    for player_id in player_ids[1:]
+                )
+            else:
+                vector = _maxn_node(future, player_ids, depth - 1, 0, {},
+                                    deadline, table, stats, clock)
+        if best_vector is None or vector[actor_index] > best_vector[actor_index]:
+            best_vector = vector
+    if best_vector is None:
+        best_vector = tuple(-SEARCH_DEATH_PENALTY for _ in player_ids)
+    table[key] = best_vector
+    return best_vector
+
+
+def maxn_root(state, player_ids, depth, deadline, table=None, clock=perf_counter):
+    """Search a multi-snake tree and maximize the acting player's vector entry."""
+    table = {} if table is None else table
+    stats = {"nodes": 0, "cache_hits": 0}
+    root_id = player_ids[0]
+    moves = _ordered_moves(state, root_id, root_id)
+    best_move = moves[0] if moves else "down"
+    best_vector = None
+    for move in moves or ["down"]:
+        if deadline_expired(deadline, clock):
+            raise _SearchTimeout
+        vector = _maxn_node(state, list(player_ids), depth, 1, {root_id: move},
+                            deadline, table, stats, clock)
+        if best_vector is None or vector[0] > best_vector[0]:
+            best_vector, best_move = vector, move
+    return SearchResult(best_move, best_vector[0] if best_vector else -SEARCH_DEATH_PENALTY,
+                        depth, stats["nodes"], stats["cache_hits"], False,
+                        "maxn", tuple(best_vector or ()))
+
+
+def iterative_deepening_search(state, fallback, deadline, enabled=True,
+                               max_depth=4, clock=perf_counter):
+    """Return only the best move from the last fully completed depth."""
+    if not enabled or deadline_expired(deadline, clock):
+        return SearchResult(fallback, 0.0, 0, 0, 0,
+                            deadline_expired(deadline, clock), "fallback")
+    relevant = select_relevant_snakes(state)
+    if not relevant:
+        return SearchResult(fallback, 0.0, 0, 0, 0, False, "fallback")
+    root_id = state["you"]["id"]
+    opponent_ids = [snake["id"] for snake in relevant]
+    if len(opponent_ids) > 1:
+        max_depth = min(int(max_depth), MAX_MAXN_DEPTH)
+    last = SearchResult(fallback, 0.0, 0, 0, 0, False, "fallback")
+    for depth in range(1, max(1, int(max_depth)) + 1):
+        try:
+            if len(opponent_ids) == 1:
+                result = alpha_beta_root(state, root_id, opponent_ids[0],
+                                         depth, deadline, clock=clock)
+            else:
+                result = maxn_root(state, [root_id] + opponent_ids, depth,
+                                   deadline, clock=clock)
+        except _SearchTimeout:
+            return SearchResult(last.move, last.score, last.completed_depth,
+                                last.nodes, last.cache_hits, True,
+                                last.algorithm, last.vector)
+        last = result
+    return last

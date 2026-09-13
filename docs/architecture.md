@@ -38,16 +38,16 @@ flowchart TD
     F --> G[Evaluate candidate score components]
     G --> H[Select best heuristic move]
     H --> I{Search enabled and time available?}
-    I -- Yes --> J[Simulate plausible simultaneous responses]
-    J --> K{Search completed?}
-    K -- Yes --> L[Choose best worst-response-adjusted score]
+    I -- Yes --> J[Iterative Alpha-Beta or MaxN search]
+    J --> K{Depth completed?}
+    K -- Yes --> L[Use best move from last completed depth]
     K -- No --> M[Keep heuristic fallback]
     I -- No --> M
     L --> N[Log chosen components and return move JSON]
     M --> N
 ```
 
-`server.run_server` receives the handler functions when `main.py` is executed. The server parses the request and returns the handler's dictionary. It contains no move strategy. `main.move` owns the decision pipeline and calls `snake.search.choose_move` after computing a heuristic fallback.
+`server.run_server` receives the handler functions when `main.py` is executed. The server parses the request and returns the handler's dictionary. It contains no move strategy. `main.move` owns the decision pipeline: it computes a heuristic fallback, gates relevant opponents, and invokes iterative Alpha-Beta or MaxN search within the request deadline. The legacy `choose_move` response model remains a bounded compatibility safety check.
 
 ## Two separate board representations
 
@@ -77,7 +77,7 @@ Every request supplies the full board. There is no mutable global match state, p
 
 Evaluation copies caller-provided blocked sets. Territory copies occupancy. Simulation deep-copies the input state before moving snakes. The board and body lists in the original request remain unchanged.
 
-`main.py` imports the search entry point and budget constants. Search functions import `main` lazily to reuse the public helpers without a top-level circular import failure. When changing module boundaries, preserve both script execution (`python main.py`) and ordinary import (`import main`).
+`main.py` imports the iterative search entry point and budget constants. Search functions import `main` lazily to reuse the public helpers without a top-level circular import failure. When changing module boundaries, preserve both script execution (`python main.py`) and ordinary import (`import main`).
 
 The algorithms use `deque`, `heapq`, `Counter`, `itertools.product`, and ordinary dictionaries/sets. Flask is the only declared runtime dependency. The practice script additionally needs Git and the installed Battlesnake CLI.
 

@@ -2,11 +2,11 @@
 
 [Documentation index](README.md) · [Implementation](../snake/search.py)
 
-The next search expansion is tracked in the [Minimax, Alpha-Beta, and MaxN plan](minimax-plan.md). The current production path remains the bounded one-turn search described below until each deeper-search phase passes its dedicated tests.
+The live search path is iterative deepening over complete simultaneous turns. It dispatches to Alpha-Beta for one relevant opponent and MaxN for multiple relevant opponents. The original bounded one-turn response search remains available as a compatibility safety gate during migration.
 
 ## Scope
 
-Search adds one simultaneous turn of enemy-response modeling to the heuristic, then examines our available next-step exits. It is a bounded worst-response approximation. It does not recursively run full multiplayer minimax or search an arbitrary depth.
+Search models complete simultaneous turns recursively. At each completed depth it retains the best legal root move; if the deadline interrupts the next depth, that partial iteration is discarded. MaxN is deliberately shallower than the two-player Alpha-Beta path because it evaluates a utility vector for every fully simulated player.
 
 The entry point is:
 
@@ -18,13 +18,25 @@ chosen, penalties, timed_out = choose_move(
 
 `scores` maps candidate directions to heuristic totals. The caller must supply suitable candidate moves and a valid fallback. With search disabled or no scores, the helper returns `(fallback, {}, False)`.
 
+The iterative controller is:
+
+```python
+result = iterative_deepening_search(
+    state, fallback, deadline, enabled=True, max_depth=2
+)
+```
+
+`SearchResult` reports `move`, `score`, `completed_depth`, `nodes`, `cache_hits`, `timed_out`, `algorithm`, and (for MaxN) the utility `vector`.
+
 ## Response generation
 
 For each enemy, `plausible_responses` first uses tail-aware safety from that enemy's perspective. It then adds in-bounds moves into unique tail cells that might release. This deliberately includes possibilities our own conservative filter would not choose. If no response is generated, it returns `['up']` so simulation still has a direction.
 
 Enemies whose current head is within four Manhattan grid steps of ours get all plausible responses enumerated. More distant enemies get one representative response, the first in their deterministic list. The distance is a tactical relevance bound: two simultaneous turns can close at most four grid steps. Food routing still uses actual BFS, not this Manhattan bound.
 
-For three nearby enemies, each with at most four directions, the Cartesian product has at most 64 response combinations per our candidate, or 256 immediate simulations across four candidates before pruning. With no enemies, the empty product still yields one simulation per candidate.
+The recursive search gates fully simulated opponents with `select_relevant_snakes`: distance from our head to the enemy body is compared with the tactical horizon. Distant snakes contribute a deterministic reflex move at the leaf instead of multiplying the tree. Branching is also capped after deterministic safety and heuristic ordering (`MAX_ORDERED_ACTIONS` for two-player nodes and `MAX_MAXN_ACTIONS` for MaxN nodes).
+
+For one relevant opponent, Alpha-Beta treats us as the maximizing player and that opponent as the minimizing player over simultaneous-turn transitions. For multiple relevant opponents, MaxN selects the child that maximizes the acting player's component of the returned utility vector; it intentionally applies no Alpha-Beta cutoff.
 
 ## Simulation sequence
 
@@ -80,7 +92,7 @@ search_deadline = min(decision_deadline, search_start + 0.22)
 
 A standard 500 ms request therefore gives a nominal 270 ms internal decision budget. A 100 ms request gives 60 ms. Food-field construction checks its deadline between food targets. Heuristic evaluation checks between candidates after computing at least one. Search checks before starting, between response combinations, and before returning.
 
-If tactical search reaches its deadline, it returns the supplied heuristic fallback, an empty penalty map, and `True`. Partial tactical results are discarded to avoid favoring candidates evaluated earlier. If heuristic evaluation itself was cut short, that fallback is the best of the candidates completed so far.
+If the deadline is already expired, search returns the supplied heuristic fallback at depth zero. If a later iterative-deepening depth times out, the result from the last completed depth is returned with `timed_out=True`; a partial deeper result is never promoted. If heuristic evaluation itself was cut short, that fallback is the best of the candidates completed so far.
 
 The cutoff is cooperative, not a preemptive watchdog: an individual BFS, simulation, JSON log write, or OS scheduling delay can extend wall time. Completed decisions are deterministic on identical states; the amount of work completed at a real deadline can vary with host load.
 
@@ -99,4 +111,4 @@ The explicit argument overrides the environment switch. Without an explicit argu
 
 The chosen move's logged `scores.search` contains its adjustment. `search_timeout` reports tactical deadline exhaustion; `fallback` separately reports the no-hard-safe-move fallback. Neither field is a general network-timeout detector.
 
-Tests cover expired and mid-search deadlines, legality, mutation, simulation, head collisions, and a saved [tactical regression state](../tests/tactical_regression.json) where the real heuristic chooses `up` but search selects `down` to avoid a worse response.
+Tests cover expired and mid-search deadlines, last-completed-depth fallback, Alpha-Beta cache reuse, MaxN vector selection, legality, mutation, simulation, head collisions, and a saved [tactical regression state](../tests/tactical_regression.json) where the real heuristic chooses `up` but search selects `down` to avoid a worse response.

@@ -14,7 +14,13 @@ import json
 import os
 import typing
 from time import perf_counter
-from snake.search import choose_move, SEARCH_BUDGET_SECONDS, HARD_CUTOFF_SECONDS
+from snake.search import (
+    choose_move,
+    iterative_deepening_search,
+    select_relevant_snakes,
+    SEARCH_BUDGET_SECONDS,
+    HARD_CUTOFF_SECONDS,
+)
 from collections import Counter, deque
 from heapq import heappop, heappush
 
@@ -566,7 +572,9 @@ def log_decision(game_state, chosen, started, components, timed_out=False, fallb
                       "snakes_alive":len(game_state["board"]["snakes"]),
                       "health":game_state["you"].get("health",100),
                       "ruleset":game_state.get("game",{}).get("ruleset",{}).get("name","standard"),
-                      "search_timeout":timed_out,"fallback":fallback},separators=(",",":")))
+                      "search_timeout":timed_out,"fallback":fallback,
+                      "search_depth":components.get("search_depth", 0),
+                      "search_nodes":components.get("search_nodes", 0)},separators=(",",":")))
 
 
 def move(game_state: typing.Dict, search_enabled=None) -> typing.Dict:
@@ -589,9 +597,50 @@ def move(game_state: typing.Dict, search_enabled=None) -> typing.Dict:
         components[direction] = score_move_components(game_state,direction,blocked,strategic_weights)
     scores = {direction:sum(parts.values()) for direction,parts in components.items()}
     chosen = max(scores,key=lambda direction:(scores[direction],-MOVE_PRIORITY.index(direction)))
+    heuristic_choice = chosen
+    immediate_penalties = {}
+    if search_enabled and len(select_relevant_snakes(game_state)) > 1:
+        legacy_deadline = min(deadline, perf_counter() + 0.03)
+        legacy_choice, immediate_penalties, legacy_timeout = choose_move(
+            game_state, scores, chosen, legacy_deadline, enabled=True
+        )
+        if not legacy_timeout and legacy_choice in scores:
+            heuristic_choice = legacy_choice
+            chosen = legacy_choice
     search_deadline = min(deadline,perf_counter()+SEARCH_BUDGET_SECONDS)
-    chosen, search_scores, timed_out = choose_move(game_state,scores,chosen,search_deadline,enabled=search_enabled)
-    components[chosen]["search"] = search_scores.get(chosen,0.0)
+    deep_result = iterative_deepening_search(
+        game_state,
+        chosen,
+        search_deadline,
+        enabled=search_enabled,
+        max_depth=max(1, int(os.environ.get("BATTLESNAKE_MAX_DEPTH", "2"))),
+    )
+    if (
+        deep_result.completed_depth > 0
+        and deep_result.move in scores
+        # A tree value cannot override immediate hard-safety and trap gates.
+        and components[deep_result.move].get("trap", 0.0) >= 0.0
+        and components[deep_result.move].get("head", 0.0) == 0.0
+        and components[deep_result.move].get("starvation", 0.0) > -10000.0
+    ):
+        chosen = deep_result.move
+        # Preserve the established one-turn safety gate when MaxN proposes a
+        # different move. A deeper positional vector must not reintroduce a
+        # response that the validated immediate search marks as fatal.
+        if deep_result.algorithm == "maxn" and chosen != heuristic_choice:
+            if not immediate_penalties:
+                safety_deadline = min(deadline, perf_counter() + 0.02)
+                _, immediate_penalties, _ = choose_move(
+                    game_state, {chosen: scores[chosen]}, chosen,
+                    safety_deadline, enabled=True
+                )
+            if immediate_penalties.get(chosen, 0.0) <= -20000.0:
+                chosen = heuristic_choice
+    timed_out = deep_result.timed_out
+    search_scores = {chosen: deep_result.score - scores.get(chosen, 0.0)}
+    components[chosen]["search"] = search_scores[chosen]
+    components[chosen]["search_depth"] = float(deep_result.completed_depth)
+    components[chosen]["search_nodes"] = float(deep_result.nodes)
     log_decision(game_state,chosen,started,components[chosen],timed_out)
     return {"move":chosen}
 
