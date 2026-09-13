@@ -13,6 +13,7 @@ These guides describe the checked-in implementation. Historical measurements are
 | [HTTP API and game state](api-and-state.md) | Routes, request fields, coordinate conventions, example payload, and input assumptions |
 | [Strategy and scoring](strategy-and-scoring.md) | Every score component, constants, food, tails, Standard profiles, territory, and Royale |
 | [Tactical search](search.md) | Simulation, plausible responses, pruning, deadlines, fallback, and approximation limits |
+| [Minimax plan](minimax-plan.md) | Staged Alpha-Beta/MaxN design, APIs, gates, risks, and implementation checkpoints |
 | [Python function reference](function-reference.md) | Helper contracts, arguments, returns, compatibility, and usage examples |
 | [Testing and performance](testing-and-performance.md) | Test organization, fixtures, invariants, benchmarks, and recorded results |
 | [Tournament operations](operations.md) | Practice runner, ports, artifacts, telemetry, death analysis, and troubleshooting |

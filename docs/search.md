@@ -2,6 +2,8 @@
 
 [Documentation index](README.md) · [Implementation](../snake/search.py)
 
+The next search expansion is tracked in the [Minimax, Alpha-Beta, and MaxN plan](minimax-plan.md). The current production path remains the bounded one-turn search described below until each deeper-search phase passes its dedicated tests.
+
 ## Scope
 
 Search adds one simultaneous turn of enemy-response modeling to the heuristic, then examines our available next-step exits. It is a bounded worst-response approximation. It does not recursively run full multiplayer minimax or search an arbitrary depth.

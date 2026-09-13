@@ -1,5 +1,6 @@
-"""Bounded one-turn maximin with a next-exit check; no deep multiplayer tree."""
+"""Bounded tactical search and the foundation for iterative game-tree search."""
 from copy import deepcopy
+from dataclasses import dataclass
 from itertools import product
 from time import perf_counter
 
@@ -7,6 +8,138 @@ SEARCH_BUDGET_SECONDS = 0.22
 HARD_CUTOFF_SECONDS = 0.27
 SEARCH_DEATH_PENALTY = 20000.0
 RELEVANT_ENEMY_DISTANCE = 4
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    """Completed search information safe to return across the module boundary."""
+
+    move: str
+    score: float
+    completed_depth: int = 0
+    nodes: int = 0
+    cache_hits: int = 0
+    timed_out: bool = False
+    algorithm: str = "fallback"
+
+
+def deadline_expired(deadline, clock=perf_counter):
+    """Return true once the monotonic search deadline has been reached."""
+    return deadline is not None and clock() >= deadline
+
+
+def select_relevant_snakes(state, max_distance=RELEVANT_ENEMY_DISTANCE, horizon=2):
+    """Select opponents whose bodies can enter our tactical neighborhood soon.
+
+    Distance is measured from our current head to the nearest enemy body segment,
+    rather than just to the enemy head. The horizon multiplier is deliberately
+    conservative: a snake farther away than this bound is left to leaf
+    approximation in the future MaxN implementation.
+    """
+    board = state["board"]
+    our_id = state["you"]["id"]
+    our_head = tuple((state["you"]["body"][0][key] for key in ("x", "y")))
+    threshold = max(0, int(max_distance)) * max(1, int(horizon))
+    ranked = []
+    for index, snake in enumerate(board.get("snakes", [])):
+        if snake.get("id") == our_id or not snake.get("body"):
+            continue
+        nearest = min(
+            abs(our_head[0] - segment["x"]) + abs(our_head[1] - segment["y"])
+            for segment in snake["body"]
+        )
+        if nearest <= threshold:
+            ranked.append((nearest, snake.get("id", ""), index, snake))
+    ranked.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [snake for _, _, _, snake in ranked]
+
+
+def _snake_view(state, snake_id):
+    """Create a shallow perspective view without modifying the request state."""
+    for snake in state["board"].get("snakes", []):
+        if snake.get("id") == snake_id:
+            view = dict(state)
+            view["you"] = snake
+            view["board"] = dict(state["board"])
+            view["board"]["snakes"] = list(state["board"].get("snakes", []))
+            return view
+    return None
+
+
+def generate_search_moves(state, snake_id):
+    """Return deterministic hard-safe directions for any snake perspective."""
+    import main as bot
+
+    view = _snake_view(state, snake_id)
+    if view is None:
+        return []
+    return bot.get_safe_moves(view, tail_aware=True)
+
+
+def fingerprint_state(state, perspective_id=None):
+    """Build a deterministic, hashable key for a search transposition table."""
+    game = state.get("game", {})
+    ruleset = game.get("ruleset", {})
+    settings = ruleset.get("settings", {})
+    board = state.get("board", {})
+
+    def cell(value):
+        return (value.get("x"), value.get("y"))
+
+    def frozen(value):
+        """Canonicalize nested rule settings into hashable deterministic values."""
+        if isinstance(value, dict):
+            return tuple((key, frozen(item)) for key, item in sorted(value.items()))
+        if isinstance(value, (list, tuple)):
+            return tuple(frozen(item) for item in value)
+        return value
+
+    snakes = []
+    for snake in sorted(board.get("snakes", []), key=lambda item: item.get("id", "")):
+        snakes.append((
+            snake.get("id", ""),
+            int(snake.get("health", 100)),
+            tuple(cell(segment) for segment in snake.get("body", [])),
+        ))
+    return (
+        int(board.get("width", 0)),
+        int(board.get("height", 0)),
+        state.get("turn", 0),
+        ruleset.get("name", "standard"),
+        frozen(settings),
+        tuple(sorted(cell(food) for food in board.get("food", []))),
+        tuple(sorted(cell(hazard) for hazard in board.get("hazards", []))),
+        tuple(snakes),
+        perspective_id or state.get("you", {}).get("id", ""),
+    )
+
+
+def evaluate_search_state(state, root_id=None, player_ids=None):
+    """Evaluate a leaf from the root perspective without tactical recursion.
+
+    The first version intentionally delegates positional detail to the validated
+    component evaluator. Later MaxN work can derive one utility component per
+    player from this same contract.
+    """
+    import main as bot
+
+    root_id = root_id or state.get("you", {}).get("id")
+    root = next((snake for snake in state.get("board", {}).get("snakes", [])
+                 if snake.get("id") == root_id), None)
+    if root is None or not root.get("body"):
+        return -SEARCH_DEATH_PENALTY
+    view = _snake_view(state, root_id)
+    head = bot.to_pos(root["body"][0])
+    blocked = bot.get_effective_blocked_cells(view)
+    blocked.discard(head)
+    space = bot.flood_fill_space(head, blocked, state["board"]["width"], state["board"]["height"], limit=400)
+    exits = bot.count_safe_exits(head, blocked, state["board"]["width"], state["board"]["height"])
+    health = root.get("health", 100)
+    length = len(root["body"])
+    value = float(space) + exits * bot.EXIT_WEIGHT + health * 0.25 + length * 2.0
+    if player_ids and root_id not in player_ids:
+        return -SEARCH_DEATH_PENALTY
+    return value
 
 
 def simulate_turn(state, moves):
