@@ -96,11 +96,13 @@ For repeated games with replay files and summaries, use the [practice runner](op
 |---|---|---|
 | `PORT` | `8000` | Integer port used by the Flask server |
 | `BATTLESNAKE_SEARCH` | `1` | Exact value `0` disables search when `move` has no explicit override |
+| `BATTLESNAKE_MAX_DEPTH` | `2` | Iterative-deepening limit; multi-snake MaxN is capped to a safe depth of `1` |
 | `BATTLESNAKE_LOG` | `1` | Exact value `0` disables per-move JSON telemetry |
 
 ```bash
 PORT=8002 .venv/bin/python main.py
 BATTLESNAKE_SEARCH=0 .venv/bin/python main.py
+BATTLESNAKE_MAX_DEPTH=1 .venv/bin/python main.py
 BATTLESNAKE_LOG=0 .venv/bin/python main.py
 ```
 
